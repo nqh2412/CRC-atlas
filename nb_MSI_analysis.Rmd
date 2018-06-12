@@ -1,0 +1,217 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r echo=TRUE}
+library(plyr)
+library(ggplot2)
+library(ggpubr)
+library(scales)
+library(ggrepel)
+`%nin%` = Negate(`%in%`)
+setwd("/Users/nqhuynh/Documents/CRC_atlas")
+ori_atlas <- read.table("CRC_Atlas_sequence_variants_details_v1.txt", sep = "\t", header = T)
+##remove mutation cause no change in protein
+atlas <- ori_atlas[ori_atlas$sequence_variant_effect != "Synonymous",]
+syno_atlas <- ori_atlas[ori_atlas$sequence_variant_effect == "Synonymous",]
+
+
+### Load gene list
+gene_crc <- read.table("final_crc_gene_list.txt", sep = "\t", header = T)
+gene_msi <- read.table("final_msi_gene_list.txt", sep = "\t", header = T)
+gene_cin <- gene_crc[gene_crc$x %nin% gene_msi$x,]
+
+### new atlas
+atlas_msi <- atlas[atlas$official_symbol %in% gene_msi$x,]
+atlas_msi$pathway <- "MSI"
+atlas_cin <- atlas[atlas$official_symbol %in% gene_cin$x,]
+atlas_cin$pathway <- "CIN"
+atlas_crc <- rbind(atlas_msi, atlas_cin)
+atlas_wt <- atlas[atlas$official_symbol %nin% atlas_crc$official_symbol,]
+atlas_wt$pathway <- "WT"
+atlas2 <- rbind(atlas_msi, atlas_cin, atlas_wt)
+
+
+###MSI CIN vs WT
+tis <- count(atlas2$cell_line_or_tissue)
+dim(tis) #13635
+tis_msi <- count(atlas_msi$cell_line_or_tissue)
+tis_msi$pathway <- "MSI"
+dim(tis_msi) #1706
+
+tis_cin <-count(atlas_cin$cell_line_or_tissue)
+tis_cin$pathway <- "CIN"
+dim(tis_cin) # 12048
+
+
+tis_o_msi <- tis_msi[tis_msi$x %nin% tis_cin$x,]
+tis_o_msi$pathway <- "MSI"
+tis_o_msi_atlas <- atlas2[atlas2$cell_line_or_tissue %in% tis_o_msi$x,]
+dim(tis_o_msi) ###  1207
+
+tis_o_cin <- tis_cin[tis_cin$x %nin% tis_msi$x,]
+tis_o_cin$pathway <- "CIN"
+dim(tis_o_cin) ###  11549
+
+tis_b_cin_msi <-tis_cin[tis_cin$x %in% tis_msi$x,]
+tis_b_cin_msi$pathway <- "MSI + CIN"
+dim(tis_b_cin_msi) ###  499
+
+tis_wt <- tis[tis$x %nin% tis_msi$x,]
+tis_wt <- tis_wt[tis_wt$x %nin% tis_cin$x,]
+tis_wt$pathway <- "WT"
+
+dim(tis_wt) ## 380
+380+11549+1207+499
+#tissue proportions
+a <- c("WT","CIN only", "MSI only", "MSI + CIN")
+a_t <- c(380, 11549, 1207, 499)/13635
+a_m <- c(4388, 36501, 3991, 283776)/328656
+a1 <- data.frame(n = a,a_t)
+a1$t = "Tissues"
+a2 <- data.frame(n = a,a_t = a_m)
+a2$t = "Mutations"
+a <- rbind(a1,a2)
+###
+tis_o_msi_atlas <- atlas2[atlas2$cell_line_or_tissue %in% tis_o_msi$x,]
+dim(tis_o_msi_atlas) #3991
+t1 <- count(tis_o_msi_atlas$cell_line_or_tissue)
+t1$pw <- "MSI only"
+
+tis_o_cin_atlas <- atlas2[atlas2$cell_line_or_tissue %in% tis_o_cin$x,]
+dim(tis_o_cin_atlas) #283776
+t2 <- count(tis_o_cin_atlas$cell_line_or_tissue)
+t2$pw <- "CIN only"
+
+tis_b_cin_msi_atlas <- atlas2[atlas2$cell_line_or_tissue %in% tis_b_cin_msi$x,]
+dim(tis_b_cin_msi_atlas)
+t3 <- count(tis_b_cin_msi_atlas$cell_line_or_tissue)
+t3$pw <- "MSI + CIN"
+tis_wt_atlas <- atlas2[atlas2$cell_line_or_tissue %in% tis_wt$x,]
+dim(tis_wt_atlas) #4388
+t4 <- count(tis_wt_atlas$cell_line_or_tissue)
+t4$pw <- "WT"
+t5<- rbind(t1,t2,t3,t4)
+
+#plot tissues by its mutations and pathway
+##create blank theme
+blank_theme <- theme_minimal()+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    plot.title=element_text(size=18, face="bold")
+  )
+a$n <- factor(a$n, levels = c("WT", "CIN only", "MSI only", "MSI + CIN"))
+a$t <- factor(a$t, levels = c("Tissues", "Mutations"))
+a
+a_p = ggplot(a, aes(x= "", y= a_t, fill = n)) +
+  geom_bar(width = 1, stat = "identity")
+
+a_p + facet_grid(facets = .~t) + 
+  coord_polar(theta = "y", start = 0) + blank_theme +
+  theme(axis.text.x=element_blank())+
+  #geom_label(aes(label = a_t),size = 3,  show.legend = F, nudge_x = 0) +
+  guides(fill = guide_legend(title = "Tissues"))+
+  ggtitle("Proportion MSI and CIN mutations and their tissues")
+
+
+
+
+t5$pw <- factor(t5$pw, levels = c("WT", "MSI only", "CIN only", "MSI + CIN"))
+my_comparisons <- list( c("WT", "MSI + CIN"), c("WT", "CIN only"), c("WT", "MSI only") )
+### https://www.r-bloggers.com/add-p-values-and-significance-levels-to-ggplots/ ###
+t5_p = ggplot(t5, aes(pw, freq))
+t5_p + geom_boxplot() +
+  scale_y_log10() +
+  stat_compare_means(method = "anova") +
+  stat_compare_means(label = "p.signif", method = "t.test", ref.group = "WT") + # add t.test 
+  ggtitle("Tissues with breakdown by tissue types")+
+  xlab("Tissue Types")+
+  ylab("Mutations")
+
+#######################
+#number of tissues
+tis_number <- count(atlas$cell_line_or_tissue)
+dim(tis_number) #13365
+
+#MSI tissues in group
+tis_ultra_number <- tis_number[tis_number$freq >= 100,] #270 tissues
+tis_ultra_number$class <- "Ultra-mutation"
+atlas_u <- atlas2[atlas2$cell_line_or_tissue %in% tis_ultra_number$x,]
+msi_u <- atlas_u[atlas_u$cell_line_or_tissue %in% tis_msi$x,]
+m_u <- count(msi_u$cell_line_or_tissue)
+
+tis_hyper_number <- tis_number[(tis_number$freq >= 10) & (tis_number$freq < 100) ,] # 351 tissues
+tis_hyper_number$class <- "Hyper-mutation"
+atlas_h <- atlas2[atlas2$cell_line_or_tissue %in% tis_hyper_number$x,]
+msi_h <- atlas_h[atlas_h$cell_line_or_tissue %in% tis_msi$x,]
+m_h <- count(msi_h$cell_line_or_tissue)
+
+tis_low_number <- tis_number[tis_number$freq < 10,] # 13014 tissues
+tis_low_number$class <- "Low-mutation"
+atlas_l <- atlas2[atlas2$cell_line_or_tissue %in% tis_low_number$x,]
+msi_l <- atlas_l[atlas_l$cell_line_or_tissue %in% tis_msi$x,]
+m_l <- count(msi_l$cell_line_or_tissue)
+
+dim(m_u) #207/270 tissues
+dim(m_h) #180/351 tissues
+dim(m_l) #1319/13014 tissues
+
+tis_number <- rbind(tis_low_number, tis_hyper_number, tis_ultra_number)
+dim(tis_number) #13635 tissues
+
+Tis_type <- c("Low-mutation", "Hyper-mutation", "Ultra-mutation")
+Tis_msi <- c(1319/13014, 180/351,207/270)*100
+Tis_wt <- c(1-1319/13014, 1-180/351, 1-207/270)*100
+b <- data.frame(Tis = Tis_msi, MSI = "MSI", Tis_type)
+b2 <- data.frame(Tis = Tis_wt, MSI = "WT", Tis_type)
+b <- rbind(b,b2)
+b$label <- c("10.14%", "51.28%", "76.67%", NA, NA, NA)
+b$Tis_type <- factor(b$Tis_type, levels = c("Low-mutation", "Hyper-mutation", "Ultra-mutation"))
+b$MSI <- factor(b$MSI, levels = c("MSI", "WT"))
+b
+b_p = ggplot(b, aes(x= "", y= Tis, fill = MSI)) +
+  geom_bar(width = 1, stat = "identity")
+b_p +facet_grid(facets = .~Tis_type) + 
+  blank_theme +
+  theme(axis.text.x=element_blank())+
+  #geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Tissues types"))+
+  ggtitle("MSI mutations breakdown by tissue types")
+
+b_p + facet_grid(facets = .~Tis_type) + 
+  coord_polar(theta = "y") + blank_theme +
+  theme(axis.text.x=element_blank())+
+  geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Tissues types"))+
+  ggtitle("MSI mutations breakdown by tissue types")
+
+####MSI mutations genes
+msi_m <- count(atlas_msi$official_symbol)
+msi_m$MMR = ifelse(msi_m$x %in% c("MSH6", "MSH2", "MLH1", "PMS2"), "Yes", "No") #add highlight 
+msi_m$x <- factor(msi_m$x, levels = msi_m$x[order(-msi_m$freq)])
+msi_m
+ggplot(msi_m, aes(x, freq, fill = MMR)) +
+  geom_bar(width = 0.9, stat ="identity") +
+  geom_label(aes(label = freq),size = 3,  show.legend = F, nudge_x = 0)+
+  coord_flip()+
+  ylab("Mutations")+ 
+  xlab("Genes") +
+  ggtitle("Mutation number of MSI tissues")+
+  scale_fill_manual(values = c("Yes"="tomato", "No"="dark gray" )) # highlight
+
+
+
+
+
+
+```
+

@@ -1,0 +1,198 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+```{r echo=TRUE}
+library(plyr)
+library(ggplot2)
+
+library(scales)
+`%nin%` = Negate(`%in%`)
+setwd("/Users/nqhuynh/Documents/CRC_atlas")
+ori_atlas <- read.table("CRC_Atlas_sequence_variants_details_v1.txt", sep = "\t", header = T)
+##remove mutation cause no change in protein
+atlas <- ori_atlas[ori_atlas$sequence_variant_effect != "Synonymous",]
+syno_atlas <- ori_atlas[ori_atlas$sequence_variant_effect == "Synonymous",]
+
+#number of tissues
+tis_number <- count(atlas$cell_line_or_tissue)
+dim(tis_number) #13365
+
+tis_ultra_number <- tis_number[tis_number$freq >= 100,] #270 tissues
+tis_ultra_number$class <- "Ultra-mutation"
+
+tis_hyper_number <- tis_number[(tis_number$freq >= 10) & (tis_number$freq < 100) ,] # 351 tissues
+tis_hyper_number$class <- "Hyper-mutation"
+
+tis_low_number <- tis_number[tis_number$freq < 10,] # 13014 tissues
+tis_low_number$class <- "Low-mutation"
+
+tis_number <- rbind(tis_low_number, tis_hyper_number, tis_ultra_number)
+
+#box plot
+##create blank theme
+blank_theme <- theme_minimal()+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+tc <- count(tis_number$freq)
+colnames(tc) <- c("Mutations", "Tissue")
+ggplot(tc, aes(Tissue, Mutations)) + 
+  geom_point()+
+  scale_x_log10() +
+  scale_y_log10() +
+  xlab("Number of Tissues") +
+  ylab("Number of Mutations")+
+  geom_vline(xintercept =  0, color = "black") +
+  geom_hline(yintercept =  0, color = "black") +
+  geom_hline(yintercept =  10, linetype="dashed", color = "red") +
+  geom_hline(yintercept =  100, linetype="dashed", color = "blue")
+
+#box plot
+tis_number$class <- factor(tis_number$class, levels = c("Low-mutation", "Hyper-mutation", "Ultra-mutation"))
+tis <- ggplot(tis_number, aes(class, freq))
+tis + geom_boxplot() +
+  scale_y_log10()
+
+l <- ggplot(tis_low_number, aes(class,freq))
+l + geom_boxplot()+
+  scale_y_log10()
+summary(tis_low_number) #mean = 1.102, median = 1
+
+
+h <- ggplot(tis_hyper_number, aes(class,freq))
+h + geom_boxplot()+
+  scale_y_log10()
+summary(tis_hyper_number) #mean = 50.58, median = 50
+
+
+u <- ggplot(tis_ultra_number, aes(class,freq))
+u + geom_boxplot()+
+  scale_y_log10()
+summary(tis_ultra_number) #mean = 1098, median = 207.5
+
+#####_MMR
+
+mmr1 = c("MSH2", "MLH1", "MSH6", "PMS2")
+#in low mutation tissues /13014
+atlas_low <- atlas[atlas$cell_line_or_tissue %in% tis_low_number$x,] # 14339 mutations
+atlas_low_mmr1 <- atlas_low[atlas_low$official_symbol %in% mmr1,] #52 mutations
+tis_low_mmr1 <- count(atlas_low_mmr1$cell_line_or_tissue) #48 tissues
+
+#in hyper mutation tissues /351
+atlas_hyper <- atlas[atlas$cell_line_or_tissue %in% tis_hyper_number$x,] # 17754 mutations
+atlas_hyper_mmr1 <- atlas_hyper[atlas_hyper$official_symbol %in% mmr1,] #6 mutations
+tis_hyper_mmr1 <- count(atlas_hyper_mmr1$cell_line_or_tissue) #6 tissues
+
+#in ultra mutation tissues /270
+atlas_ultra <- atlas[atlas$cell_line_or_tissue %in% tis_ultra_number$x,] # 296563 mutations
+atlas_ultra_mmr1 <- atlas_ultra[atlas_ultra$official_symbol %in% mmr1,] #146 mutations
+tis_ultra_mmr1 <- count(atlas_ultra_mmr1$cell_line_or_tissue) #57 tissues
+
+Tissues_type <- c("Low-mutation", "Hyper-mutation", "Ultra-mutation")
+No_tissue <- c(48, 6, 57)
+No_mutation <- c(52, 6, 146)
+Total_mutation <- c(14339, 17754, 296563)/328656*100
+Total_tissue <- c(13014, 351, 270)/13635*100
+
+f <- data.frame(Tissues_type, Total = Total_tissue, Type = "Tissues")
+f1 <- data.frame(Tissues_type, Total = Total_mutation, Type = "Mutations")
+f <- rbind(f,f1)
+f
+f$Tissues_type <- factor(f$Tissues_type, levels = c("Low-mutation", "Hyper-mutation", "Ultra-mutation"))
+f_p = ggplot(f, aes(x= "", y= Total, fill = Tissues_type)) +
+  geom_bar(width = 1, stat = "identity")
+f_p + facet_grid(facets = .~Type) + 
+  blank_theme +
+  theme(axis.text.x=element_blank())+
+  #geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Tissues types"))+
+  ggtitle("Proportion of tissue types and its mutation numbers")
+
+f_p + facet_grid(facets = .~Type) + 
+  blank_theme +
+  theme(axis.text.x=element_blank())+
+  #geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Tissues types"))+
+  ggtitle("Proportion of tissue types and its mutation numbers")+
+  coord_polar(theta = "y", start = 0)
+
+## MMR Full gene list
+mmr <- c(10714, 27030, 2956, 29935, 3978, 4292, 4436, 4437, 5111, 5395, 5424, 5425, 57804, 5981, 5982, 5983, 5984, 5985, 6117, 6118, 6119, 6742, 9156)
+#in low mutation tissues /13014
+atlas_low <- atlas[atlas$cell_line_or_tissue %in% tis_low_number$x,] # 14339 mutations
+atlas_low_mmr <- atlas_low[atlas_low$entrez_gene_id %in% mmr,] #53 mutations
+dim(atlas_low_mmr)
+tis_low_mmr <- count(atlas_low_mmr$cell_line_or_tissue) #49 tissues
+dim(tis_low_mmr)
+tis_low_mmr_atlas <-atlas[atlas$cell_line_or_tissue %in% tis_low_mmr$x,] # 70 mutation
+dim(tis_low_mmr_atlas)
+
+#in hyper mutation tissues /351
+atlas_hyper <- atlas[atlas$cell_line_or_tissue %in% tis_hyper_number$x,] # 17754 mutations
+atlas_hyper_mmr <- atlas_hyper[atlas_hyper$entrez_gene_id %in% mmr,] #15 mutations
+dim(atlas_hyper_mmr)
+tis_hyper_mmr <- count(atlas_hyper_mmr$cell_line_or_tissue) #15 tissues
+dim(tis_hyper_mmr)
+tis_hyper_mmr_atlas <-atlas[atlas$cell_line_or_tissue %in% tis_hyper_mmr$x,] #697
+dim(tis_hyper_mmr_atlas) 
+
+
+#in ultra mutation tissues /270
+atlas_ultra <- atlas[atlas$cell_line_or_tissue %in% tis_ultra_number$x,] # 296563 mutations
+atlas_ultra_mmr <- atlas_ultra[atlas_ultra$entrez_gene_id %in% mmr,] #445 mutations
+dim(atlas_ultra_mmr)
+tis_ultra_mmr <- count(atlas_ultra_mmr$cell_line_or_tissue) #105 tissues
+dim(tis_ultra_mmr)
+tis_ultra_mmr_atlas <-atlas[atlas$cell_line_or_tissue %in% tis_ultra_mmr$x,] # 260730
+dim(tis_ultra_mmr_atlas)
+
+Tis_type <- c("Low-mutation", "Hyper-mutation", "Ultra-mutation")
+Tis_mmr <- c(49/13014*100, 15/351*100, 105/270*100)
+Tis_non <- c(12965/13014*100, 336/351*100, 165/270*100)
+
+Mut_mmr <- c(70/14339, 697/17754, 260730/296563)
+Mut_non <- c(14269/14339, 17057/17754, 35833/296563)
+
+
+#plot tissues
+b <- data.frame(Tis = Tis_mmr, MMR = "MMR", Tis_type)
+b2 <- data.frame(Tis = Tis_non, MMR = "Non", Tis_type)
+b <- rbind(b,b2)
+b$tis_2 <- c("0.38 %", "4.27%", "38.89%", NA, NA, NA)
+
+b$Tis_type <- factor(b$Tis_type, levels = c("Low-mutation", "Hyper-mutation", "Ultra-mutation"))
+b_p = ggplot(b, aes(x= "", y= Tis, fill = MMR)) +
+                  geom_bar(width = 1, stat = "identity")
+b_p + facet_grid(facets = .~Tis_type) + 
+  coord_polar(theta = "y") + blank_theme +
+  theme(axis.text.x=element_blank())+
+  geom_label(aes(label = tis_2),size = 3,  show.legend = F, nudge_x = 0) +
+  guides(fill = guide_legend(title = "Tissues"))
+
+#plot by mutations
+m <- data.frame(Mut = Mut_mmr, MMR = "MMR", Tis_type)
+m2 <- data.frame(Mut = Mut_non, MMR = "Non", Tis_type)
+m <- rbind(m,m2)
+m$tis_3 <- m$Mut*100
+m$tis_3
+m$tis_4<- c("0.49%", "3.93%", "87.92%", NA, NA, NA)
+m$Tis_type <- factor(b$Tis_type, levels = c("Low-mutation", "Hyper-mutation", "Ultra-mutation"))
+m_p = ggplot(m, aes(x= "", y= Mut, fill = MMR)) +
+  geom_bar(width = 1, stat = "identity")
+m_p + facet_grid(facets = .~Tis_type) + 
+  coord_polar(theta = "y") + blank_theme +
+  theme(axis.text.x=element_blank())+
+  geom_label(aes(label = tis_4),size = 3,  show.legend = F, nudge_x = 0) +
+  guides(fill = guide_legend(title = "Mutations"))
+```
+
+

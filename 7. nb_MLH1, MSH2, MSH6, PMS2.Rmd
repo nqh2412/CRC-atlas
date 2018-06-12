@@ -1,0 +1,230 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+```{r}
+library(plyr)
+library(ggplot2)
+library(ggpubr)
+library(scales)
+library(ggrepel)
+library(stringi)
+`%nin%` = Negate(`%in%`)
+setwd("/Users/nqhuynh/Documents/CRC_atlas")
+ori_atlas <- read.table("CRC_Atlas_sequence_variants_details_v1.txt", sep = "\t", header = T)
+##remove mutation cause no change in protein
+atlas <- ori_atlas[ori_atlas$sequence_variant_effect != "Synonymous",]
+syno_atlas <- ori_atlas[ori_atlas$sequence_variant_effect == "Synonymous",]
+
+#
+mmr <- c("MLH1", "MSH2", "MSH6", "PMS2")
+atlas_mmr <- atlas[atlas$official_symbol %in% mmr,]
+tis_mmr <- count(atlas_mmr$cell_line_or_tissue)
+dim(tis_mmr) #111
+
+#
+#mmr tissues in group
+#number of tissues
+tis_number <- count(atlas$cell_line_or_tissue)
+dim(tis_number) #13365
+
+tis_ultra_number <- tis_number[tis_number$freq >= 100,] #270 tissues
+tis_ultra_number$class <- "Ultra-mutation"
+atlas_u <- atlas[atlas$cell_line_or_tissue %in% tis_ultra_number$x,]
+mmr_u <- atlas_u[atlas_u$cell_line_or_tissue %in% tis_mmr$x,]
+m_u <- count(mmr_u$cell_line_or_tissue)
+
+tis_hyper_number <- tis_number[(tis_number$freq >= 10) & (tis_number$freq < 100) ,] # 351 tissues
+tis_hyper_number$class <- "Hyper-mutation"
+atlas_h <- atlas[atlas$cell_line_or_tissue %in% tis_hyper_number$x,]
+mmr_h <- atlas_h[atlas_h$cell_line_or_tissue %in% tis_mmr$x,]
+m_h <- count(mmr_h$cell_line_or_tissue)
+
+
+tis_low_number <- tis_number[tis_number$freq < 10,] # 13014 tissues
+tis_low_number$class <- "Low-mutation"
+atlas_l <- atlas[atlas$cell_line_or_tissue %in% tis_low_number$x,]
+mmr_l <- atlas_l[atlas_l$cell_line_or_tissue %in% tis_mmr$x,]
+m_l <- count(mmr_l$cell_line_or_tissue)
+
+dim(m_l)
+dim(m_h)
+dim(m_u)
+
+Tis_type <- c("Low-mutation", "Hyper-mutation", "Ultra-mutation")
+Tis_mmr <- c(48/13014, 6/351,57/270)*100
+Tis_wt <- c(1-48/13014, 1-6/351, 1-57/270)*100
+b <- data.frame(Tis = Tis_mmr, MMR = "Yes", Tis_type)
+b2 <- data.frame(Tis = Tis_wt, MMR = "No", Tis_type)
+b <- rbind(b,b2)
+b$label = c("0.37%", "1.71%", "21.1%", NA, NA, NA)
+
+b
+#plot
+##create blank theme
+blank_theme <- theme_minimal()+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+b$Tis_type <- factor(b$Tis_type, levels = c("Low-mutation", "Hyper-mutation", "Ultra-mutation"))
+b$MMR <- factor(b$MMR, levels = c("No", "Yes"))
+b_p = ggplot(b, aes(x= "", y= Tis, fill = MMR)) +
+  geom_bar(width = 1, stat = "identity")
+b_p +facet_grid(facets = .~Tis_type) + 
+  blank_theme +
+  theme(axis.text.x=element_blank())+
+  geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Tissues types"))+
+  ggtitle("Tissues have MMR mutations breakdown by tissue types")+
+  scale_fill_manual(values = c("Yes"="tomato", "No"="#00e6b8" ))
+
+b_p + facet_grid(facets = .~Tis_type) + 
+  coord_polar(theta = "y") + blank_theme +
+  theme(axis.text.x=element_blank())+
+  geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "MMR"))+
+  ggtitle("Tissues have MMR mutations breakdown by tissue types")+
+  scale_fill_manual(values = c("Yes"="tomato", "No"="#00e6b8" ))
+
+### Tissues have MMR mutations
+tis_mmr_atlas <- atlas[atlas$cell_line_or_tissue %in% tis_mmr$x,]
+dim(mmr_l)
+dim(mmr_h)
+dim(mmr_u)
+
+dim(atlas_l)
+dim(atlas_h)
+dim(atlas_u)
+Tis_type <- c("Low-mutation", "Hyper-mutation", "Ultra-mutation")
+Mut_mmr <- c(66/14339, 242/17754,204078/296563)*100
+Mut_wt <- 100 - Mut_mmr
+d <- data.frame(Tis = Mut_mmr, MMR = "Yes", Tis_type)
+d2 <- data.frame(Tis = Mut_wt, MMR = "No", Tis_type)
+d <- rbind(d,d2)
+d
+d$label = c("0.47%", "1.36%", "68.81%", NA, NA, NA)
+
+#plot
+d$Tis_type <- factor(d$Tis_type, levels = c("Low-mutation", "Hyper-mutation", "Ultra-mutation"))
+d$MMR <- factor(d$MMR, levels = c("No", "Yes"))
+d_p = ggplot(d, aes(x= "", y= Tis, fill = MMR)) +
+  geom_bar(width = 1, stat = "identity")
+d_p +facet_grid(facets = .~Tis_type) + 
+  blank_theme +
+  theme(axis.text.x=element_blank())+
+  geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Tissues types"))+
+  ggtitle("MMR mutations breakdown by tissue types")+
+  scale_fill_manual(values = c("Yes"="tomato", "No"="#00e6b8" ))
+
+d_p + facet_grid(facets = .~Tis_type) + 
+  coord_polar(theta = "y") + blank_theme +
+  theme(axis.text.x=element_blank())+
+  geom_label_repel(aes(label = label),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "MMR"))+
+  ggtitle("MMR mutations breakdown by tissue types")+
+  scale_fill_manual(values = c("Yes"="tomato", "No"="#00e6b8" ))
+
+
+
+
+
+
+###Mutations
+mmr_genes <- count(atlas_mmr$official_symbol)
+mmr_genes$x <- factor(mmr_genes$x, levels = mmr_genes$x[order(-mmr_genes$freq)])
+ggplot(mmr_genes, aes(x, freq)) +
+  geom_bar(width = 0.9, stat ="identity") +
+  geom_label(aes(label = freq),size = 3,  show.legend = F, nudge_x = 0)+
+  ylab("Mutations")+ 
+  xlab("Genes") +
+  ggtitle("Mutation number of MMR tissues")
+
+### mutation types
+mut_type <- count(atlas_mmr, c("atlas_mmr$official_symbol","type_of_sequence_variant" ))
+mut_type
+mut_type$atlas_mmr.official_symbol <- factor(mut_type$atlas_mmr.official_symbol, levels = c("MSH6", "MLH1", "PMS2", "MSH2"))
+#mut_type$type_of_sequence_variant <- factor(mut_type$type_of_sequence_variant, levels = c("No", "Yes"))
+mut_p = ggplot(mut_type, aes(x= "", y= freq, fill = type_of_sequence_variant)) +
+  geom_bar(width = 1, stat = "identity")
+mut_p +facet_grid(facets = .~atlas_mmr.official_symbol) + 
+  blank_theme +
+  theme(axis.text.x=element_blank())+
+  #geom_label_repel(aes(label = freq),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Types of mutation"))+
+  ggtitle("MMR mutation types")
+  #scale_fill_manual(values = c("Yes"="tomato", "No"="#00e6b8" ))
+
+mut_p2 = ggplot(mut_type, aes(type_of_sequence_variant,freq, fill = type_of_sequence_variant)) +
+  geom_bar(width = 1, stat = "identity")
+mut_p2 +facet_wrap(facets = ~atlas_mmr.official_symbol, scales = "free") + 
+  #blank_theme +
+  theme(axis.text.x=element_blank())+
+  #geom_label_repel(aes(label = freq),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Types of mutation"))+
+  ggtitle("MMR mutation types")
+#scale_fill_manual(values = c("Yes"="tomato", "No"="#00e6b8" ))
+
+### Mutations sequence variants
+#number split
+atlas_mmr$nucleotide_position <- as.numeric(stri_extract_first_regex(atlas_mmr$nucleotide_change, "[0-9]+"))
+#atlas_mmr$nucleotide_position <- gsub("[^[:digit:]]", "", atlas_mmr$nucleotide_change)
+#character
+atlas_mmr$change_type<-gsub("[[:digit:]]","", atlas_mmr$nucleotide_change)
+atlas_mmr$change_type<-gsub('[c._]', '', atlas_mmr$change_type)
+atlas_mmr$score = 1
+
+#atlas_mmr$nucleotide_position <- factor(atlas_mmr$nucleotide_position, levels = order(atlas_mmr$nucleotide_position))
+
+mutv_p = ggplot(atlas_mmr, aes(nucleotide_position,score, fill = official_symbol)) +
+  geom_bar(width = 1, stat = "identity")
+mutv_p +facet_wrap(facets = ~official_symbol, scales = "free") + 
+  #blank_theme +
+  #theme(axis.text.x=element_blank())+
+  #geom_label_repel(aes(label = change_type),size = 1,  show.legend = F) +
+  guides(fill = guide_legend(title = "Genes"))+
+  ggtitle("Nucleotide changes") +
+  scale_fill_manual(values = c("MLH1"="tomato", "MSH2"="tomato", "MSH6" = "tomato", "PMS2" = "tomato"))
+
+data.frame(atlas_mmr$official_symbol, atlas_mmr$nucleotide_position, atlas_mmr$change_type)
+
+### mutation effects
+mut_eff <- count(atlas_mmr, c("atlas_mmr$official_symbol","sequence_variant_effect" ))
+
+mut_eff$atlas_mmr.official_symbol <- factor(mut_eff$atlas_mmr.official_symbol, levels = c("MSH6", "MLH1", "PMS2", "MSH2"))
+#mut_type$type_of_sequence_variant <- factor(mut_type$type_of_sequence_variant, levels = c("No", "Yes"))
+mutf_p = ggplot(mut_eff, aes(sequence_variant_effect,freq, fill = sequence_variant_effect)) +
+  geom_bar(width = 1, stat = "identity")
+mutf_p +facet_wrap(facets = ~atlas_mmr.official_symbol, scales = "free") + 
+  #blank_theme +
+  theme(axis.text.x=element_blank())+
+  #geom_label_repel(aes(label = freq),size = 3,  show.legend = F, nudge_x = 0, nudge_y = 0) +
+  guides(fill = guide_legend(title = "Types of mutation"))+
+  ggtitle("MMR mutation effects")
+#scale_fill_manual(values = c("Yes"="tomato", "No"="#00e6b8" ))
+mut_eff
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
